@@ -68,6 +68,7 @@ bool debugger_enabled = false;
 char *paste_text = NULL;
 char paste_text_data[65536];
 bool pasting_bas = false;
+char *keybuf = NULL;
 
 uint16_t num_ram_banks = 64; // 512 KB default
 
@@ -403,6 +404,10 @@ usage()
 	printf("-run\n");
 	printf("\tStart the -prg/-bas program using RUN or SYS, depending\n");
 	printf("\ton the load address.\n");
+	printf("-keybuf <some-text>\n");
+	printf("\tInject <some-text> into the keyboard buffer after loading\n");
+	printf("\tand running a program with -prg/-bas and -run.\n");
+	printf("\tEnter control characters in hex with \\X, e.g. \\X0D for CR.\n");
 	printf("-geos\n");
 	printf("\tLaunch GEOS at startup.\n");
 	printf("-warp\n");
@@ -553,6 +558,15 @@ main(int argc, char **argv)
 			argc--;
 			argv++;
 			run_after_load = true;
+		} else if (!strcmp(argv[0], "-keybuf")) {
+			argc--;
+			argv++;
+			if (!argc || argv[0][0] == '-') {
+				usage();
+			}
+			keybuf = argv[0];
+			argc--;
+			argv++;
 		} else if (!strcmp(argv[0], "-bas")) {
 			argc--;
 			argv++;
@@ -829,6 +843,10 @@ main(int argc, char **argv)
 		size_t paste_size = SDL_RWread(bas_file, paste_text, 1, sizeof(paste_text_data) - 1);
 		if (run_after_load) {
 			strncpy(paste_text + paste_size, "\rRUN\r", sizeof(paste_text_data) - paste_size);
+			if (keybuf) {
+				paste_size = strlen(paste_text);
+				strncpy(paste_text + paste_size, keybuf, sizeof(paste_text_data) - paste_size);
+			}
 		} else {
 			paste_text[paste_size] = 0;
 		}
@@ -1097,11 +1115,15 @@ emulator_loop(void *param)
 				}
 
 				if (run_after_load) {
+					paste_text = paste_text_data;
 					if (start == 0x0801) {
-						paste_text = "RUN\r";
+						snprintf(paste_text, sizeof(paste_text_data), "RUN\r");
 					} else {
-						paste_text = paste_text_data;
 						snprintf(paste_text, sizeof(paste_text_data), "SYS$%04X\r", start);
+					}
+					if (keybuf) {
+						size_t paste_size = strlen(paste_text);
+						strncpy(paste_text + paste_size, keybuf, sizeof(paste_text_data) - paste_size);
 					}
 				}
 			}
